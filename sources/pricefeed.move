@@ -69,11 +69,10 @@ module oracle_service::pricefeed {
         let key = to_bytes(&request_key);
         let round_data = borrow(&data_source.round_data, &key);
         return *round_data
-
     }
 
     #[view]
-    public fun get_token_in_block_height_price(token_type: address, height: u64): u256 acquires DataSource {
+    public fun get_token_at_block_height_price(token_type: address, height: u64): u256 acquires DataSource {
 
        let data_source = borrow_global<DataSource>(@oracle_service); 
        let request_key = RequestKey{
@@ -89,7 +88,7 @@ module oracle_service::pricefeed {
     public fun get_privious_update_round_block_height(token_type:address, height: u64):u64 acquires DataSource {
         let data_source = borrow_global<DataSource>(@oracle_service);
         let updated_blocks = borrow(& data_source.token_updated_blocks, &token_type);
-        let (exists, index) = vector::index_of(updated_blocks, &height);
+        let (_, index) = vector::index_of(updated_blocks, &height);
         return *vector::borrow(updated_blocks, index - 1)
         
     }
@@ -101,41 +100,42 @@ module oracle_service::pricefeed {
         let updated_blocks = borrow(& data_source.token_updated_blocks, &token_type);
         let length = vector::length(updated_blocks);
        return *vector::borrow(updated_blocks, length - 1)
-
-
     }
 
 
-    public entry fun update_token_price(token_type: address) acquires DataSource{
+    public entry fun update_token_price(token_types: vector<address>) acquires DataSource{
    
         let data_source = borrow_global_mut<DataSource>(@oracle_service);
-        assert!(contains_key(& data_source.oracle_pair_id, &token_type), ETokenOracleNotExist);
-        let (block_height, timestamp) = get_block_info();
-        let oracle_pair_id = borrow(&data_source.oracle_pair_id, &token_type);
 
-
+        let tokens_length = vector::length(&token_types);
+        let i = 0;
+        while (i < tokens_length) {
+            let token_type = vector::borrow(&token_types, i);
+            assert!(contains_key(& data_source.oracle_pair_id, token_type), ETokenOracleNotExist);
+             let (block_height, _) = get_block_info();
+             let oracle_pair_id = borrow(&data_source.oracle_pair_id, token_type);
 
         //set updated block
-         if(contains_key(&data_source.token_updated_blocks, &token_type)){
-            let updated_blocks = borrow_mut(&mut data_source.token_updated_blocks, &token_type);
+         if(contains_key(&data_source.token_updated_blocks, token_type)){
+            let updated_blocks = borrow_mut(&mut data_source.token_updated_blocks, token_type);
             vector::push_back(updated_blocks, block_height);
          }else{
             let v = vector::empty<u64>();
             vector::push_back(&mut v, block_height);
-             simple_map::add(&mut data_source.token_updated_blocks, token_type, v); 
+             simple_map::add(&mut data_source.token_updated_blocks, *token_type, v); 
          };
-         
-       
-
         //set round data
         let (price, _, decimals) =  oracle::get_price(*oracle_pair_id);
 
         let request_key = RequestKey{
-            token_type: token_type,
+            token_type: *token_type,
             block_number: block_height
         };
         let key = to_bytes(&request_key);
         simple_map::add(&mut data_source.round_data, key, price);
+
+            i = i + 1
+        };
         
     }
 
