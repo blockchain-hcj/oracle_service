@@ -18,7 +18,8 @@ module oracle_service::pricefeed {
     struct DataSource has key{
         oracle_pair_id: SimpleMap<address, String>,
         token_updated_blocks: SimpleMap<address, vector<u64>>,
-        round_data: SimpleMap<vector<u8>, u256>
+        round_data: SimpleMap<vector<u8>, u256>,
+        token_decimals: SimpleMap<address, u64>,
     }
     
 
@@ -35,7 +36,8 @@ module oracle_service::pricefeed {
             DataSource{
                 oracle_pair_id:  simple_map::create(),
                 token_updated_blocks: simple_map::create(),
-                round_data:  simple_map::create()
+                round_data:  simple_map::create(),
+                token_decimals:  simple_map::create()
                 }
             );
             capability::create<ADMIN>(deployer, &ADMIN{});
@@ -46,17 +48,22 @@ module oracle_service::pricefeed {
            let data_source = borrow_global_mut<DataSource>(@oracle_service);
 
             let oracle_pair_id_map = &mut data_source.oracle_pair_id;
+            let token_decimals_map =  &mut data_source.token_decimals;
+            let (_, _, decimals) =  oracle::get_price(_oracle_pair_id);
             if(contains_key(oracle_pair_id_map, &token_type)){
                  let oracle_pair_id_value = borrow_mut(oracle_pair_id_map, &token_type);
                  *oracle_pair_id_value = _oracle_pair_id;
+                 let token_decimals_value = borrow_mut(token_decimals_map, &token_type);
+                 *token_decimals_value = decimals;
              }else{
                 simple_map::add(oracle_pair_id_map, token_type, _oracle_pair_id);
+                simple_map::add(token_decimals_map, token_type, decimals);
              };
     }
 
 
     #[view]
-    public fun lastest_round_data(token_type: address): u256 acquires DataSource {
+    public fun lastest_round_data(token_type: address): (u256, u64) acquires DataSource {
         let data_source = borrow_global<DataSource>(@oracle_service);
         assert!(contains_key(& data_source.token_updated_blocks, &token_type), ETokenNotUpdated);
         let updated_blocks = borrow(& data_source.token_updated_blocks, &token_type);
@@ -68,11 +75,12 @@ module oracle_service::pricefeed {
         };
         let key = to_bytes(&request_key);
         let round_data = borrow(&data_source.round_data, &key);
-        return *round_data
+        let decimals = borrow(&data_source.token_decimals, &token_type);
+        return (*round_data, *decimals)
     }
 
     #[view]
-    public fun get_token_at_block_height_price(token_type: address, height: u64): u256 acquires DataSource {
+    public fun get_token_at_block_height_price(token_type: address, height: u64): (u256, u64) acquires DataSource {
 
        let data_source = borrow_global<DataSource>(@oracle_service); 
        let request_key = RequestKey{
@@ -81,7 +89,8 @@ module oracle_service::pricefeed {
         };
         let key = to_bytes(&request_key);
         let round_data = borrow(&data_source.round_data, &key);
-        return *round_data
+        let decimals = borrow(&data_source.token_decimals, &token_type);
+        return (*round_data, *decimals)
     }
 
     #[view]
@@ -125,8 +134,8 @@ module oracle_service::pricefeed {
              simple_map::add(&mut data_source.token_updated_blocks, *token_type, v); 
          };
         //set round data
-        let (price, _, decimals) =  oracle::get_price(*oracle_pair_id);
 
+        let (price, _, _) =  oracle::get_price(*oracle_pair_id);
         let request_key = RequestKey{
             token_type: *token_type,
             block_number: block_height
@@ -139,7 +148,7 @@ module oracle_service::pricefeed {
         
     }
 
-    
+   
 
     fun acquire_admin_cap(account: &signer): Cap<ADMIN> {
         capability::acquire<ADMIN>(account, &ADMIN{})
