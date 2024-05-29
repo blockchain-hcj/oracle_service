@@ -9,6 +9,7 @@ module oracle_service::pricefeed {
     use std::capability::{Self, Cap};
     use std::block::{get_block_info}; 
     use std::oracle;
+    use std::event;
 
 
     const ETokenOracleNotExist: u64 = 1000;
@@ -25,13 +26,38 @@ module oracle_service::pricefeed {
         non_native: vector<address>
     }
     
-
     struct ADMIN has drop {}
 
     struct RequestKey has drop, copy {
         token_type: address,
         block_number: u64
     }
+
+
+    #[event]
+    struct SetNativeTokenEvent has store, drop {
+        token_type: address,
+        oracle_pair_id: String,
+        decimals: u64
+
+    }
+
+    #[event]
+    struct SetNonNativeTokenEvent has store, drop {
+        token_type: address,
+        decimals: u64
+    }
+
+    #[event]
+    struct UpdateTokenPriceEvent has store, drop {
+        token_type: address,
+        block_height: u64,
+        price: u256
+    }
+
+
+    
+
 
      fun init_module(deployer: &signer) {
             move_to(
@@ -46,6 +72,8 @@ module oracle_service::pricefeed {
             );
             capability::create<ADMIN>(deployer, &ADMIN{});
      }
+
+
     
     public entry fun set_token_config(account: &signer, token_type: address,  _oracle_pair_id: String) acquires DataSource {
             acquire_admin_cap(account);
@@ -63,6 +91,11 @@ module oracle_service::pricefeed {
                 simple_map::add(oracle_pair_id_map, token_type, _oracle_pair_id);
                 simple_map::add(token_decimals_map, token_type, decimals);
              };
+            event::emit<SetNativeTokenEvent>(SetNativeTokenEvent{
+               token_type,
+               oracle_pair_id: _oracle_pair_id,
+               decimals
+            });
     }
 
     public entry fun set_non_native_token_config(account: &signer, token_type: address, token_decimals: u64) acquires DataSource{
@@ -72,6 +105,10 @@ module oracle_service::pricefeed {
              if(!vector::contains(&data_source.non_native, &token_type)){
                 vector::push_back(&mut data_source.non_native, token_type);
                 simple_map::add(token_decimals_map, token_type, token_decimals); 
+                event::emit<SetNonNativeTokenEvent>(SetNonNativeTokenEvent{
+                   token_type,
+                   decimals: token_decimals
+                });
              }
     }
 
@@ -159,6 +196,11 @@ module oracle_service::pricefeed {
         let key = to_bytes(&request_key);
         simple_map::add(&mut data_source.round_data, key, price);
 
+        event::emit<UpdateTokenPriceEvent>(UpdateTokenPriceEvent{
+                 token_type: *token_type,
+                 block_height,
+                 price
+            });
             i = i + 1
         };
         
@@ -187,14 +229,16 @@ module oracle_service::pricefeed {
         };
         let key = to_bytes(&request_key);
         simple_map::add(&mut data_source.round_data, key, price);
-
+        event::emit<UpdateTokenPriceEvent>(UpdateTokenPriceEvent{
+                 token_type,
+                 block_height,
+                 price
+            });
      }
    
 
 
 
-
-   
 
     fun acquire_admin_cap(account: &signer): Cap<ADMIN> {
         capability::acquire<ADMIN>(account, &ADMIN{})
