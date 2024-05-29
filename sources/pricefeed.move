@@ -13,6 +13,8 @@ module oracle_service::pricefeed {
 
     const ETokenOracleNotExist: u64 = 1000;
     const ETokenNotUpdated: u64 = 1001;
+    const ETokenNotNonNative: u64 = 1002;
+
 
 
     struct DataSource has key{
@@ -20,6 +22,7 @@ module oracle_service::pricefeed {
         token_updated_blocks: SimpleMap<address, vector<u64>>,
         round_data: SimpleMap<vector<u8>, u256>,
         token_decimals: SimpleMap<address, u64>,
+        non_native: vector<address>
     }
     
 
@@ -37,7 +40,8 @@ module oracle_service::pricefeed {
                 oracle_pair_id:  simple_map::create(),
                 token_updated_blocks: simple_map::create(),
                 round_data:  simple_map::create(),
-                token_decimals:  simple_map::create()
+                token_decimals:  simple_map::create(),
+                non_native: vector::empty()
                 }
             );
             capability::create<ADMIN>(deployer, &ADMIN{});
@@ -60,6 +64,18 @@ module oracle_service::pricefeed {
                 simple_map::add(token_decimals_map, token_type, decimals);
              };
     }
+
+    public entry fun set_non_native_token_config(account: &signer, token_type: address, token_decimals: u64) acquires DataSource{
+            acquire_admin_cap(account); 
+            let data_source = borrow_global_mut<DataSource>(@oracle_service);
+            let token_decimals_map =  &mut data_source.token_decimals;
+             if(!vector::contains(&data_source.non_native, &token_type)){
+                vector::push_back(&mut data_source.non_native, token_type);
+                simple_map::add(token_decimals_map, token_type, token_decimals); 
+             }
+    }
+
+
 
 
     #[view]
@@ -148,11 +164,42 @@ module oracle_service::pricefeed {
         
     }
 
+
+     public entry fun update_non_native_token_price(account: &signer, token_type: address, price: u256) acquires DataSource{
+        acquire_admin_cap(account);
+        let data_source = borrow_global_mut<DataSource>(@oracle_service);
+        assert!(vector::contains(&data_source.non_native, &token_type), ETokenNotNonNative);
+        let (block_height, _) = get_block_info(); 
+
+          if(contains_key(&data_source.token_updated_blocks, &token_type)){
+            let updated_blocks = borrow_mut(&mut data_source.token_updated_blocks, &token_type);
+            vector::push_back(updated_blocks, block_height);
+         }else{
+            let v = vector::empty<u64>();
+            vector::push_back(&mut v, block_height);
+             simple_map::add(&mut data_source.token_updated_blocks, token_type, v); 
+         };
+
+
+        let request_key = RequestKey{
+            token_type: token_type,
+            block_number: block_height
+        };
+        let key = to_bytes(&request_key);
+        simple_map::add(&mut data_source.round_data, key, price);
+
+     }
+   
+
+
+
+
    
 
     fun acquire_admin_cap(account: &signer): Cap<ADMIN> {
         capability::acquire<ADMIN>(account, &ADMIN{})
     }
+
     
 
 }   
