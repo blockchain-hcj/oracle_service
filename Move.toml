@@ -7,4 +7,4 @@ InitiaStdlib = { git = "https://github.com/initia-labs/move-natives", subdir = "
 
 [addresses]
 std =  "0x1"
-oracle_service= "0x67243FAC3B61F10414A13EAC628644888CE3865F"
+oracle_service= "0xB2E5CA668EF487EFBD833B040EC0F94F977F2E89"
